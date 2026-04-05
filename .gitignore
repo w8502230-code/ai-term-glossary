@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+# 企业 PAC 勿提交
+china-vip-pac.pac.txt
+*.pac
+*.pac.txt
+*.local
+.DS_Store

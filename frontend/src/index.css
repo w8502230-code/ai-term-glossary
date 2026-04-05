@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: system-ui, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-in {
+  animation: page-in 0.35s ease-out both;
+}
+
+@keyframes pulse-mic {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.animate-pulse-mic {
+  animation: pulse-mic 1.2s ease-in-out infinite;
+}
