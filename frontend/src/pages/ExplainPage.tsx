@@ -28,12 +28,21 @@ export function ExplainPage() {
     }
     setStatus("loading");
     setData(null);
-    const res = await defineTerm(term.trim());
-    if (res.ok) {
-      setData(res);
-      setStatus("ok");
-    } else {
-      setData(res);
+    try {
+      const res = await defineTerm(term.trim());
+      if (res.ok) {
+        setData(res);
+        setStatus("ok");
+      } else {
+        setData(res);
+        setStatus("err");
+      }
+    } catch {
+      setData({
+        ok: false,
+        error: "CLIENT",
+        message: "加载失败，请重试或返回首页。",
+      });
       setStatus("err");
     }
   }, [term, navigate]);
