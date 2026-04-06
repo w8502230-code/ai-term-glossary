@@ -42,6 +42,42 @@ function writeLiked(key: string, on: boolean): void {
   }
 }
 
+function isWeChatInApp(): boolean {
+  return /MicroMessenger/i.test(typeof navigator !== "undefined" ? navigator.userAgent : "");
+}
+
+/** 微信等 WebView 常禁用 Clipboard API，用 execCommand 作为降级 */
+function copyUrlLegacy(url: string): boolean {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = url;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    ta.style.top = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+async function copyUrlBestEffort(url: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+      return true;
+    }
+  } catch {
+    /* fall through */
+  }
+  return copyUrlLegacy(url);
+}
+
 function IconHeart({ filled }: { filled: boolean }) {
   if (filled) {
     return (
@@ -98,6 +134,8 @@ export function EngagementBar({
     return readLiked(SITE_LIKED_STORAGE_KEY);
   });
   const [busy, setBusy] = useState(false);
+  /** 微信内复制失败时展示链接，供长按或再次点「复制」 */
+  const [shareFallbackUrl, setShareFallbackUrl] = useState<string | null>(null);
 
   useEffect(() => {
     migrateLegacyHomeLike();
@@ -140,27 +178,46 @@ export function EngagementBar({
 
     setBusy(true);
     try {
-      if (navigator.share) {
+      let ok = false;
+      if (typeof navigator.share === "function") {
         try {
-          await navigator.share({ title: "AI 术语普及", url });
-          await finish();
+          await navigator.share({ title: "AI 术语普及", text: "AI 术语普及", url });
+          ok = true;
         } catch (e) {
           if ((e as Error).name === "AbortError") return;
-          await navigator.clipboard.writeText(url);
-          await finish();
+          ok = await copyUrlBestEffort(url);
         }
       } else {
-        await navigator.clipboard.writeText(url);
-        await finish();
+        ok = await copyUrlBestEffort(url);
       }
-    } catch {
-      /* clipboard / share failed */
+
+      if (ok) {
+        setShareFallbackUrl(null);
+        await finish();
+      } else {
+        setShareFallbackUrl(url);
+        // #region agent log
+        fetch("http://127.0.0.1:7584/ingest/fdff2d8e-4389-4f8a-9cd4-81b416275668", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "ec3601" },
+          body: JSON.stringify({
+            sessionId: "ec3601",
+            location: "EngagementBar.tsx:doShare",
+            message: "share_copy_all_failed",
+            data: { wechat: isWeChatInApp(), hadNavigatorShare: typeof navigator.share === "function" },
+            timestamp: Date.now(),
+            hypothesisId: "H1",
+          }),
+        }).catch(() => {});
+        // #endregion
+      }
     } finally {
       setBusy(false);
     }
   }, [busy, onRefresh, term, variant]);
 
   return (
+    <div className="flex w-full flex-col items-center gap-2">
     <div
       className="flex items-center justify-center gap-6 tabular-nums text-gray-600 sm:gap-8"
       role="group"
@@ -184,7 +241,7 @@ export function EngagementBar({
         type="button"
         onClick={() => void doShare()}
         disabled={busy || (variant === "term" && !term?.trim())}
-        className="flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-0.5 text-gray-600 transition hover:text-blue-600 disabled:opacity-40"
+        className="flex min-h-[44px] min-w-[44px] touch-manipulation flex-col items-center justify-center gap-0.5 text-gray-600 transition hover:text-blue-600 disabled:opacity-40"
         aria-label="转发"
       >
         <IconForward />
@@ -198,6 +255,47 @@ export function EngagementBar({
         <span className="text-xs font-medium tracking-wide text-gray-400">views</span>
         <span className="text-sm font-semibold text-gray-700">{views}</span>
       </div>
+    </div>
+
+      {shareFallbackUrl ? (
+        <div className="w-full max-w-md rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-gray-800">
+          <p className="mb-2 font-medium text-amber-900">
+            {isWeChatInApp()
+              ? "当前环境无法一键复制，请长按下方链接全选后复制，再发给好友。"
+              : "无法自动复制链接，请长按下方框内文字复制，或点「再试复制」。"}
+          </p>
+          <input
+            readOnly
+            className="mb-2 w-full rounded border border-gray-300 bg-white px-2 py-2 text-xs break-all"
+            value={shareFallbackUrl}
+            onFocus={(e) => e.target.select()}
+          />
+          <button
+            type="button"
+            className="touch-manipulation rounded bg-blue-600 px-3 py-2 text-xs font-medium text-white"
+            onClick={async () => {
+              const copied = await copyUrlBestEffort(shareFallbackUrl);
+              if (copied) {
+                setShareFallbackUrl(null);
+                const finish = async () => {
+                  try {
+                    if (sessionStorage.getItem(SITE_SHARE_SESSION_KEY) !== "1") {
+                      sessionStorage.setItem(SITE_SHARE_SESSION_KEY, "1");
+                      await postStatsEvent({ kind: "share" });
+                    }
+                  } catch {
+                    /* ignore */
+                  }
+                  await onRefresh();
+                };
+                await finish();
+              }
+            }}
+          >
+            再试复制
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
