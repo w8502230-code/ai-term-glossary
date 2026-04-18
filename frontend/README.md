@@ -1,3 +1,9 @@
+# AI 术语普及 — 前端
+
+本目录为 **Vite + React** 子项目，与仓库根目录 [`PRD.md`](../PRD.md)、[`tech-design.md`](../tech-design.md)、[`AGENTS.md`](../AGENTS.md) 对齐。**我的收藏**（首页列表 + 解释页打勾）仅读写浏览器 **`localStorage`**，规则见 `tech-design.md` §5.3。
+
+---
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

@@ -1,6 +1,6 @@
 # AI 术语普及
 
-独立 Web 应用：极简首页查询 AI 术语，展示**专业定义（中文 → 英文）**与**通俗解释（仅中文）**。需求与接口见根目录 [`PRD.md`](PRD.md)、[`AGENTS.md`](AGENTS.md)、[`tech-design.md`](tech-design.md)。
+独立 Web 应用：极简首页查询 AI 术语，展示**专业定义（中文 → 英文）**与**通俗解释（仅中文）**；**我的收藏**为纯前端能力（术语存于本机浏览器，不上传服务端），产品规则见 [`PRD.md`](PRD.md) §5.7，实现约定见 [`tech-design.md`](tech-design.md) §5.3。协作与验收还可参考 [`AGENTS.md`](AGENTS.md)。
 
 ## 环境要求
 
@@ -108,5 +108,5 @@ npx vite preview
 
 ## 技术栈
 
-- 前端：React 19、TypeScript、Vite、Tailwind CSS v4、React Router  
+- 前端：React 19、TypeScript、Vite、Tailwind CSS v4、React Router；**我的收藏**等客户端状态使用 `localStorage`（与后端无接口）  
 - 后端：Express、TypeScript，调用百炼 **OpenAI 兼容接口**（`compatible-mode/v1/chat/completions`）

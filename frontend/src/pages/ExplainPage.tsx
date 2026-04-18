@@ -1,9 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { EngagementBar } from "../components/EngagementBar";
+import { FavoriteToggle } from "../components/FavoriteToggle";
 import { SKIP_HOME_VIEW_KEY } from "../constants/storageKeys";
 import { defineTerm, fetchTermStats, postStatsEvent } from "../services/api";
 import type { TDefineResponse } from "../types/api";
+
+function explainFavoriteLeading(termForStorage: string) {
+  return (
+    <div
+      className="flex min-h-[44px] flex-col items-center justify-center gap-0.5 text-gray-600"
+      role="group"
+      aria-label="我的收藏"
+    >
+      <FavoriteToggle term={termForStorage} compact />
+      <span className="text-xs font-medium text-gray-400">收藏</span>
+    </div>
+  );
+}
 
 export function ExplainPage() {
   const [params] = useSearchParams();
@@ -134,6 +148,7 @@ export function ExplainPage() {
               likes={termStats.likes}
               shares={termStats.shares}
               onRefresh={() => refreshTermStats(data.term)}
+              leadingSlot={explainFavoriteLeading(data.term)}
             />
           </div>
         </article>
@@ -148,6 +163,7 @@ export function ExplainPage() {
             likes={termStats.likes}
             shares={termStats.shares}
             onRefresh={() => refreshTermStats(term.trim())}
+            leadingSlot={explainFavoriteLeading(term.trim())}
           />
         </div>
       )}

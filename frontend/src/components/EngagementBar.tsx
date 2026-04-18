@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { SITE_LIKED_STORAGE_KEY, SITE_SHARE_SESSION_KEY } from "../constants/storageKeys";
 import { postStatsEvent } from "../services/api";
 
@@ -9,6 +9,8 @@ type TEngagementBarProps = {
   likes: number;
   shares: number;
   onRefresh: () => Promise<void>;
+  /** 与点赞、转发、views 同一行，置于最左侧（如「我的收藏」入口或当前词收藏打勾） */
+  leadingSlot?: ReactNode;
 };
 
 function readLiked(key: string): boolean {
@@ -58,6 +60,7 @@ function copyUrlLegacy(url: string): boolean {
     document.body.appendChild(ta);
     ta.focus();
     ta.select();
+    ta.setSelectionRange(0, ta.value.length);
     const ok = document.execCommand("copy");
     document.body.removeChild(ta);
     return ok;
@@ -76,6 +79,26 @@ async function copyUrlBestEffort(url: string): Promise<boolean> {
     /* fall through */
   }
   return copyUrlLegacy(url);
+}
+
+/** 微信等环境可能挂上永不结束的 share()，导致 busy 无法解除 */
+const SHARE_WAIT_MS = 3500;
+
+async function tryNavigatorShare(data: ShareData): Promise<"ok" | "abort" | "fail"> {
+  if (typeof navigator.share !== "function") return "fail";
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => resolve("fail"), SHARE_WAIT_MS);
+    navigator
+      .share(data)
+      .then(() => {
+        window.clearTimeout(timer);
+        resolve("ok");
+      })
+      .catch((e: Error) => {
+        window.clearTimeout(timer);
+        resolve(e?.name === "AbortError" ? "abort" : "fail");
+      });
+  });
 }
 
 function IconHeart({ filled }: { filled: boolean }) {
@@ -128,6 +151,7 @@ export function EngagementBar({
   likes,
   shares,
   onRefresh,
+  leadingSlot,
 }: TEngagementBarProps) {
   const [liked, setLiked] = useState(() => {
     migrateLegacyHomeLike();
@@ -155,7 +179,7 @@ export function EngagementBar({
     } finally {
       setBusy(false);
     }
-  }, [busy, liked, onRefresh]);
+  }, [busy, liked, onRefresh, term, variant]);
 
   const doShare = useCallback(async () => {
     if (busy) return;
@@ -179,37 +203,21 @@ export function EngagementBar({
     setBusy(true);
     try {
       let ok = false;
-      if (typeof navigator.share === "function") {
-        try {
-          await navigator.share({ title: "AI 术语普及", text: "AI 术语普及", url });
-          ok = true;
-        } catch (e) {
-          if ((e as Error).name === "AbortError") return;
-          ok = await copyUrlBestEffort(url);
-        }
+      const inWeChat = isWeChatInApp();
+      if (!inWeChat && typeof navigator.share === "function") {
+        const r = await tryNavigatorShare({ title: "AI 术语普及", text: "AI 术语普及", url });
+        if (r === "abort") return;
+        if (r === "ok") ok = true;
+        else ok = await copyUrlBestEffort(url);
       } else {
         ok = await copyUrlBestEffort(url);
       }
 
       if (ok) {
         setShareFallbackUrl(null);
-        await finish();
+        void finish();
       } else {
         setShareFallbackUrl(url);
-        // #region agent log
-        fetch("http://127.0.0.1:7584/ingest/fdff2d8e-4389-4f8a-9cd4-81b416275668", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "ec3601" },
-          body: JSON.stringify({
-            sessionId: "ec3601",
-            location: "EngagementBar.tsx:doShare",
-            message: "share_copy_all_failed",
-            data: { wechat: isWeChatInApp(), hadNavigatorShare: typeof navigator.share === "function" },
-            timestamp: Date.now(),
-            hypothesisId: "H1",
-          }),
-        }).catch(() => {});
-        // #endregion
       }
     } finally {
       setBusy(false);
@@ -218,44 +226,45 @@ export function EngagementBar({
 
   return (
     <div className="flex w-full flex-col items-center gap-2">
-    <div
-      className="flex items-center justify-center gap-6 tabular-nums text-gray-600 sm:gap-8"
-      role="group"
-      aria-label="互动"
-    >
-      <button
-        type="button"
-        onClick={() => void toggleLike()}
-        disabled={busy || (variant === "term" && !term?.trim())}
-        className="flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-0.5 text-gray-600 transition hover:text-red-500 disabled:opacity-40"
-        aria-label={liked ? "取消点赞" : "点赞"}
-        aria-pressed={liked}
-      >
-        <span className={liked ? "text-red-500" : ""}>
-          <IconHeart filled={liked} />
-        </span>
-        <span className="text-xs font-medium">{likes}</span>
-      </button>
-
-      <button
-        type="button"
-        onClick={() => void doShare()}
-        disabled={busy || (variant === "term" && !term?.trim())}
-        className="flex min-h-[44px] min-w-[44px] touch-manipulation flex-col items-center justify-center gap-0.5 text-gray-600 transition hover:text-blue-600 disabled:opacity-40"
-        aria-label="转发"
-      >
-        <IconForward />
-        <span className="text-xs font-medium">{shares}</span>
-      </button>
-
       <div
-        className="flex min-h-[44px] flex-col items-center justify-center gap-0.5 text-gray-500"
-        aria-label={`浏览次数 ${views}`}
+        className="flex flex-nowrap items-center justify-center gap-3 tabular-nums text-gray-600 sm:gap-6 md:gap-8"
+        role="group"
+        aria-label={leadingSlot ? "互动与收藏" : "互动"}
       >
-        <span className="text-xs font-medium tracking-wide text-gray-400">views</span>
-        <span className="text-sm font-semibold text-gray-700">{views}</span>
+        {leadingSlot ? <div className="flex shrink-0 items-center">{leadingSlot}</div> : null}
+        <button
+          type="button"
+          onClick={() => void toggleLike()}
+          disabled={busy || (variant === "term" && !term?.trim())}
+          className="flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-0.5 text-gray-600 transition hover:text-red-500 disabled:opacity-40"
+          aria-label={liked ? "取消点赞" : "点赞"}
+          aria-pressed={liked}
+        >
+          <span className={liked ? "text-red-500" : ""}>
+            <IconHeart filled={liked} />
+          </span>
+          <span className="text-xs font-medium">{likes}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => void doShare()}
+          disabled={busy || (variant === "term" && !term?.trim())}
+          className="flex min-h-[44px] min-w-[44px] cursor-pointer touch-manipulation flex-col items-center justify-center gap-0.5 text-gray-600 transition hover:text-blue-600 disabled:opacity-40"
+          aria-label="转发"
+        >
+          <IconForward />
+          <span className="text-xs font-medium">{shares}</span>
+        </button>
+
+        <div
+          className="flex min-h-[44px] flex-col items-center justify-center gap-0.5 text-gray-500"
+          aria-label={`浏览次数 ${views}`}
+        >
+          <span className="text-xs font-medium tracking-wide text-gray-400">views</span>
+          <span className="text-sm font-semibold text-gray-700">{views}</span>
+        </div>
       </div>
-    </div>
 
       {shareFallbackUrl ? (
         <div className="w-full max-w-md rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-gray-800">
@@ -273,23 +282,21 @@ export function EngagementBar({
           <button
             type="button"
             className="touch-manipulation rounded bg-blue-600 px-3 py-2 text-xs font-medium text-white"
-            onClick={async () => {
-              const copied = await copyUrlBestEffort(shareFallbackUrl);
-              if (copied) {
+            onClick={() => {
+              void (async () => {
+                const copied = await copyUrlBestEffort(shareFallbackUrl);
+                if (!copied) return;
                 setShareFallbackUrl(null);
-                const finish = async () => {
-                  try {
-                    if (sessionStorage.getItem(SITE_SHARE_SESSION_KEY) !== "1") {
-                      sessionStorage.setItem(SITE_SHARE_SESSION_KEY, "1");
-                      await postStatsEvent({ kind: "share" });
-                    }
-                  } catch {
-                    /* ignore */
+                try {
+                  if (sessionStorage.getItem(SITE_SHARE_SESSION_KEY) !== "1") {
+                    sessionStorage.setItem(SITE_SHARE_SESSION_KEY, "1");
+                    await postStatsEvent({ kind: "share" });
                   }
-                  await onRefresh();
-                };
-                await finish();
-              }
+                } catch {
+                  /* ignore */
+                }
+                await onRefresh();
+              })();
             }}
           >
             再试复制

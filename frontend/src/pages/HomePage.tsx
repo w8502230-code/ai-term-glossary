@@ -4,6 +4,7 @@ import { SearchBar } from "../components/SearchBar";
 import { TermCard } from "../components/TermCard";
 import termsData from "../data/terms.json";
 import { EngagementBar } from "../components/EngagementBar";
+import { FavoritesOverlay } from "../components/FavoritesOverlay";
 import { SKIP_HOME_VIEW_KEY } from "../constants/storageKeys";
 import { fetchHomeStats, postStatsEvent } from "../services/api";
 import {
@@ -30,6 +31,25 @@ function getSpeechRecognition(): SpeechRecognitionConstructorLike | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+function IconBookmarkList() {
+  return (
+    <svg
+      className="h-6 w-6"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+      aria-hidden
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+      />
+    </svg>
+  );
+}
+
 export function HomePage() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -41,6 +61,7 @@ export function HomePage() {
   const [micHint, setMicHint] = useState<string | null>(null);
   const recRef = useRef<SpeechRecognitionLike | null>(null);
   const [homeStats, setHomeStats] = useState({ views: 0, likes: 0, shares: 0 });
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
 
   const refreshHomeStats = useCallback(async () => {
     const r = await fetchHomeStats();
@@ -170,8 +191,21 @@ export function HomePage() {
           likes={homeStats.likes}
           shares={homeStats.shares}
           onRefresh={refreshHomeStats}
+          leadingSlot={
+            <button
+              type="button"
+              onClick={() => setFavoritesOpen(true)}
+              className="flex min-h-[44px] flex-col items-center justify-center gap-0.5 text-gray-600 transition hover:text-blue-600"
+              aria-label="打开我的收藏"
+            >
+              <IconBookmarkList />
+              <span className="text-xs font-medium">收藏</span>
+            </button>
+          }
         />
       </div>
+
+      <FavoritesOverlay open={favoritesOpen} onClose={() => setFavoritesOpen(false)} />
 
       <section className="mx-auto mt-12 w-full max-w-xl">
         <h2 className="mb-3 text-center text-sm font-medium text-gray-500">

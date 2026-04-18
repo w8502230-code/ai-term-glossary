@@ -9,3 +9,6 @@ export const SITE_LIKED_STORAGE_KEY = "ai-term-glossary-liked-site";
 
 /** 全站转发：浏览器会话内成功转发只上报一次 +1（两页都点转发仍计 1 次） */
 export const SITE_SHARE_SESSION_KEY = "ai-term-glossary-site-share-reported";
+
+/** 我的收藏：JSON 字符串数组，顺序队首最旧、队尾最新，最多 100 条（见 PRD §5.7） */
+export const FAVORITES_STORAGE_KEY = "ai-term-glossary-favorites-v1";

@@ -59,13 +59,14 @@ AI术语普及/
 │     │  ├─ HomePage.tsx
 │     │  ├─ ExplainPage.tsx
 │     │  └─ GoodbyePage.tsx
-│     ├─ components/         # SearchBar（含右侧话筒）、TermCard、EngagementBar（点赞/转发/浏览，见 §5.2）、Layout 等
+│     ├─ components/         # SearchBar（含右侧话筒）、TermCard、EngagementBar（点赞/转发/浏览，见 §5.2）、FavoritesDrawer 或 FavoritesOverlay（我的收藏列表，见 §5.3）、Layout 等
 │     ├─ services/
 │     │  └─ api.ts           # defineTerm、fetchStats、postStatsEvent（见 §5.2）
 │     ├─ data/
 │     │  └─ terms.json       # 本地词池（30～80+ 条）
 │     └─ utils/
-│        └─ shuffle.ts       # Fisher–Yates，首页取 3 条
+│        ├─ shuffle.ts       # Fisher–Yates，首页取 3 条
+│        └─ favoritesStorage.ts  # 我的收藏：读/写 localStorage、上限 100、FIFO（见 §5.3）
 │
 └─ backend/
    ├─ package.json
@@ -88,8 +89,8 @@ AI术语普及/
 
 | 路径 | 组件 | 行为要点 |
 |------|------|----------|
-| `/` | `HomePage` | 搜索框回车提交；**话筒**走 Web Speech API，识别文本写入输入框（默认用户再回车确认，与 PRD 一致）；挂载时从 `terms.json` **随机**出 3 卡（1 主推 + 2 偏旧，规则见 §7；点过主推后 session 顺延下一日期档）；**互动条**见 §5.2 |
-| `/explain` | `ExplainPage` | 读取 `searchParams.term`（中/英均可）；`useEffect` 请求 `/api/define`；展示 loading / error / **专业中文、专业英文、通俗中文** 三块正文；释义成功后 **互动条** + 统计上报见 §5.2 |
+| `/` | `HomePage` | 搜索框回车提交；**话筒**走 Web Speech API，识别文本写入输入框（默认用户再回车确认，与 PRD 一致）；挂载时从 `terms.json` **随机**出 3 卡（1 主推 + 2 偏旧，规则见 §7；点过主推后 session 顺延下一日期档）；**「我的收藏」入口**；点击后在**路由仍为 `/`** 时打开 **抽屉或全屏层** 展示收藏列表（见 §5.3）；**互动条**见 §5.2 |
+| `/explain` | `ExplainPage` | 读取 `searchParams.term`（中/英均可）；`useEffect` 请求 `/api/define`；展示 loading / error / **专业中文、专业英文、通俗中文** 三块正文；释义成功后 **打勾** 收藏/取消（见 §5.3）；**互动条** + 统计上报见 §5.2 |
 | `/goodbye` | `GoodbyePage` | 静态文案 + 可选链回 `/` |
 
 **说明**：使用 query 参数便于刷新与简单分享；若 term 缺失则重定向首页或提示。
@@ -152,7 +153,7 @@ AI术语普及/
 
 ### 5.2 互动统计：`/api/stats`（点赞 / 转发 / 浏览）
 
-与 [`PRD.md`](PRD.md) §5.6 对齐；**实现阶段**再编码，本文仅约定形态。
+与 [`PRD.md`](PRD.md) §5.6 对齐；行为以 `backend/src/routes/stats.ts`、`backend/src/services/statsStore.ts` 与前端 `HomePage` / `ExplainPage` / `EngagementBar` 为准。
 
 **前端展示（与 PRD 一致）**：点赞、转发为**符号按钮**（视觉参照微信小视频底部点赞/转发）；浏览为英文 **`views`** 加数字，不用图标。
 
@@ -192,6 +193,28 @@ AI术语普及/
 
 - `term` 长度与 `/api/define` 一致；对 `POST` 做简单 rate limit（可选中间件）。  
 - 响应中不泄露内部路径或 Key。
+
+### 5.3 我的收藏（纯前端）
+
+与 [`PRD.md`](PRD.md) §5.7 对齐：**无后端 API**；数据仅存用户浏览器（推荐 **`localStorage`**）。
+
+**职责划分**
+
+| 区域 | 行为要点 |
+|------|----------|
+| `ExplainPage` | 在 **`defineTerm` 成功**且正文展示后，渲染**打勾**控件；切换收藏时读/写 §5.3 存储；**打勾**图标与 `EngagementBar` 点赞图标**不得复用**同一图形，避免与 §5.6 混淆。 |
+| `HomePage` | **「我的收藏」**入口；打开 **抽屉或全屏层**（`/` 不变）；列表数据来自同一存储；列表项可跳转 `/explain?term=`；列表内 **打勾** 取消收藏。 |
+
+**存储格式（建议）**
+
+- 单一键（如 `FAVORITES_STORAGE_KEY`）下存 **JSON 数组**，元素为 **字符串** `term`，与解释页 URL / 收藏时使用的字符串**一致**（建议对 `term` 做与路由相同的 **trim**，同词不同空白视为同一项时可在实现里归一化）。
+- **顺序**：数组从前往后为 **从旧到新**（队首最旧、队尾最新）。**新收藏**追加到**队尾**；若长度将大于 **100**，在追加前从**队首**移除多余项，使长度 ≤ 100。
+- **不要求**时间戳字段。
+- **去重**：同一 `term` 再次收藏时应**不产生重复条目**（可将已存在项移至队尾视为「最新」，或保持幂等 noop，产品上与 PRD「最旧淘汰」一致即可；实现任选一种并保证上限 100）。
+
+**非目标**
+
+- 后端持久化、同步、账号维度存储：不做。
 
 ---
 
